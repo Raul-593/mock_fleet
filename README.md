@@ -68,8 +68,8 @@ La aplicación permite registrar y administrar choferes, vehículos y remolques,
 
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/tu-usuario/nombre-proyecto.git
-cd nombre-proyecto
+git clone https://github.com/Raul-593/fleet.git
+cd fleet
 
 # 2. Instalar dependencias
 npm install
@@ -122,8 +122,7 @@ nombre-proyecto/
 │   ├── services/       # Llamadas a la API
 │   ├── store/          # Estado global
 │   └── utils/          # Helpers y utilidades
-├── public/
-├── screenshots/        # Imágenes para el README
+├── public/             # Imágenes para el README
 ├── .env.example
 └── README.md
 ```
@@ -142,4 +141,4 @@ nombre-proyecto/
 
 ---
 
-<div align="center"> <sub>Hecho por <a href="https://github.com/tu-usuario">Raul-593</a></sub> </div>
+<div align="center"> <sub>Hecho por <a href="https://github.com/Raul-593">Raul-593</a></sub> </div>
