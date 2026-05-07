@@ -1,0 +1,362 @@
+'use client'
+
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/src/components/ui/card'
+import { Button } from '@/src/components/ui/button'
+import { Label } from '@/src/components/ui/label'
+import { Input } from '@/src/components/ui/input'
+import { createRouteAssignment } from '@/src/app/dashboard/actions'
+import { Navigation, Copy, MessageCircle } from 'lucide-react'
+import { toast } from 'sonner'
+
+type Route = { id: string; name: string; origin: string; destination: string; distance_km: number; standard_duration_minutes?: number; tanquear?: string | boolean }
+type Truck = { id: string; plate_number: string }
+type Trailer = { id: string; id_number: string }
+type Driver = { id: string; name: string }
+
+export default function RouteAssignmentForm({
+    routes,
+    trucks,
+    trailers,
+    drivers
+}: {
+    routes: Route[],
+    trucks: Truck[],
+    trailers: Trailer[],
+    drivers: Driver[]
+}) {
+    const [status, setStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: '' })
+    const [isSubmitting, setIsSubmitting] = useState(false)
+    const [departureDatetime, setDepartureDatetime] = useState('')
+    const [arrivalDatetime, setArrivalDatetime] = useState('')
+    const [cargaDatetime, setCargaDatetime] = useState('')
+
+    // States for custom message & inputs
+    const [selectedRouteId, setSelectedRouteId] = useState('')
+    const [selectedTruck, setSelectedTruck] = useState('')
+    const [selectedTrailer, setSelectedTrailer] = useState('')
+    const [selectedDriver, setSelectedDriver] = useState('')
+    const [folio, setFolio] = useState('')
+    const [desdeNote, setDesde] = useState('')
+    const [tanquear, setTanquear] = useState('')
+
+    //WhatsApp Reuse window
+    const whatsappWindowRef = useRef<Window | null>(null)
+
+    const calculateArrivalTime = useCallback((departure: string, routeId: string) => {
+        if (!departure) return ''
+
+        const route = routes.find(r => r.id === routeId)
+        const durationMinutes = route?.standard_duration_minutes || 180 // Default 3 hours
+
+        const departureDate = new Date(departure)
+        const arrivalDate = new Date(departureDate.getTime() + durationMinutes * 60 * 1000)
+
+        // Format to YYYY-MM-DDThh:mm for datetime-local
+        const year = arrivalDate.getFullYear()
+        const month = String(arrivalDate.getMonth() + 1).padStart(2, '0')
+        const day = String(arrivalDate.getDate()).padStart(2, '0')
+        const hours = String(arrivalDate.getHours()).padStart(2, '0')
+        const minutes = String(arrivalDate.getMinutes()).padStart(2, '0')
+        return `${year}-${month}-${day}T${hours}:${minutes}`
+    }, [routes])
+
+    const handleDepartureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newDeparture = e.target.value
+        setDepartureDatetime(newDeparture)
+        setArrivalDatetime(calculateArrivalTime(newDeparture, selectedRouteId))
+    }
+
+    // Update arrival time and other fields when route changes
+    const handleRoutePlaceholder = (routeId: string) => {
+        setSelectedRouteId(routeId)
+        if (routeId) {
+            const route = routes.find(r => r.id === routeId)
+            
+            // Update arrival based on new route duration if departure is set
+            if (departureDatetime) {
+                setArrivalDatetime(calculateArrivalTime(departureDatetime, routeId))
+            }
+
+            if (route?.tanquear) {
+                setTanquear(String(route.tanquear))
+            } else {
+                setTanquear('')
+            }
+            
+            // Set default "Desde" (Origin)
+            if (route?.origin && !desdeNote) {
+                setDesde(route.origin)
+            }
+        }
+    }
+
+    // Effect only for initial or external sync if needed, but simplified
+    useEffect(() => {
+        // This is kept for any other side effects, but we've moved the main logic to handleRoutePlaceholder
+    }, [selectedRouteId, routes, calculateArrivalTime, desdeNote, departureDatetime])
+
+    async function clientAction(formData: FormData) {
+        setIsSubmitting(true)
+        setStatus({ type: null, message: '' })
+
+        setIsSubmitting(false)
+    }
+
+    // Helper building the custom message
+    const selectedRouteObj = routes.find(r => r.id === selectedRouteId)
+
+    const formattedDate = cargaDatetime ? new Date(cargaDatetime).toLocaleDateString('es-ES') : ''
+    const formattedCargaTime = cargaDatetime ? new Date(cargaDatetime).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : ''
+    const formattedCargaTimeLLegada = cargaDatetime ? new Date(new Date(cargaDatetime).getTime() - 30 * 60 * 1000).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : ''
+
+    const customMessage = `FECHA: ${formattedDate}
+DESDE: ${desdeNote}
+DESTINO: ${selectedRouteObj?.destination || ''}
+FOLIO: ${folio}
+HORA: ${formattedCargaTime} (${formattedCargaTimeLLegada})
+UNIDAD: ${selectedTruck}
+ARRASTRE: ${selectedTrailer}
+TANQUEAR: ${tanquear}
+CONDUCTOR: ${selectedDriver}`
+
+    // WhatsApp Mandar Mensaje
+    const handleWhatsApp = () => {
+    const encodedMessage = encodeURIComponent(customMessage.trim())
+    const url = `https://web.whatsapp.com/send?text=${encodedMessage}`
+
+    if (whatsappWindowRef.current && !whatsappWindowRef.current.closed) {
+        // Reutiliza la ventana existente y actualiza la URL
+        whatsappWindowRef.current.location.href = url
+        whatsappWindowRef.current.focus()
+    } else {
+        // Abre una nueva ventana solo si no existe o fue cerrada
+        whatsappWindowRef.current = window.open(url, 'whatsapp_sender')
+    }
+}
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(customMessage)
+            .then(() => {
+                setStatus({ type: 'success', message: '¡Mensaje copiado al portapapeles!' })
+                toast.success('Mensaje copiado')
+            })
+    }
+
+    return (
+        <Card className="mt-6 border-0 shadow-none bg-transparent">
+            <CardHeader className="px-0 pt-0 pb-4">
+                <div className="space-y-1">
+                    <CardTitle className="text-xl font-semibold flex items-center gap-2">
+                        <Navigation className="h-5 w-5" />
+                        Nueva Asignación de Ruta
+                    </CardTitle>
+                    <CardDescription>Asigna vehículos y conductores disponibles a rutas programadas.</CardDescription>
+                </div>
+            </CardHeader>
+
+            <div className="mt-2">
+                <form action={clientAction} className="space-y-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+
+                        {/* CARD 1: Asignación de Ruta */}
+                        <Card className="h-full border-2 rounded-xl">
+                            <CardHeader className="bg-muted/50 pb-4 border-b">
+                                <CardTitle className="text-sm font-bold tracking-tight uppercase">Asignacion de Ruta</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4 pt-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="company_route_id">Ruta de Empresa</Label>
+                                    <select
+                                        id="company_route_id"
+                                        name="company_route_id"
+                                        required
+                                        value={selectedRouteId}
+                                        onChange={(e) => handleRoutePlaceholder(e.target.value)}
+                                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        <option value="">Selecciona una ruta...</option>
+                                        {routes.map(r => (
+                                            <option key={r.id} value={r.id}>
+                                                {r.name} ({r.distance_km} km)
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="carga_datetime">Hora de Carga</Label>
+                                    <Input
+                                        id="carga_datetime"
+                                        name="carga_datetime"
+                                        type="datetime-local"
+                                        required
+                                        value={cargaDatetime}
+                                        onChange={(e) => setCargaDatetime(e.target.value)}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="departure_datetime">Incio Hora de Ruta</Label>
+                                    <Input
+                                        id="departure_datetime"
+                                        name="departure_datetime"
+                                        type="datetime-local"
+                                        required
+                                        value={departureDatetime}
+                                        onChange={handleDepartureChange}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="arrival_datetime">Fecha de Llegada</Label>
+                                    <Input
+                                        id="arrival_datetime"
+                                        name="arrival_datetime"
+                                        type="datetime-local"
+                                        required
+                                        value={arrivalDatetime}
+                                        onChange={(e) => setArrivalDatetime(e.target.value)}
+                                    />
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* CARD 2: Asignación de Conductor y Unidad */}
+                        <Card className="h-full border-2 rounded-xl">
+                            <CardHeader className="bg-muted/50 pb-4 border-b">
+                                <CardTitle className="text-sm font-bold tracking-tight uppercase">Asignacion de Conductor y Unidad</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-4 pt-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="driver_input">Conductor</Label>
+                                    <Input
+                                        id="driver_input"
+                                        name="driver_input"
+                                        list="drivers-list"
+                                        required
+                                        value={selectedDriver}
+                                        onChange={(e) => setSelectedDriver(e.target.value)}
+                                        placeholder="Escribe o selecciona conductor..."
+                                    />
+                                    <datalist id="drivers-list">
+                                        {drivers.map(d => (
+                                            <option key={d.id} value={d.name} />
+                                        ))}
+                                    </datalist>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="truck_input">Camion</Label>
+                                    <Input
+                                        id="truck_input"
+                                        name="truck_input"
+                                        list="trucks-list"
+                                        required
+                                        value={selectedTruck}
+                                        onChange={(e) => setSelectedTruck(e.target.value)}
+                                        placeholder="Escribe o selecciona camión..."
+                                    />
+                                    <datalist id="trucks-list">
+                                        {trucks.map(t => (
+                                            <option key={t.id} value={t.plate_number} />
+                                        ))}
+                                    </datalist>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="trailer_input">Remolque</Label>
+                                    <Input
+                                        id="trailer_input"
+                                        name="trailer_input"
+                                        list="trailers-list"
+                                        value={selectedTrailer}
+                                        onChange={(e) => setSelectedTrailer(e.target.value)}
+                                        placeholder="Escribe o selecciona remolque..."
+                                    />
+                                    <datalist id="trailers-list">
+                                        {trailers.map(t => (
+                                            <option key={t.id} value={t.id_number} />
+                                        ))}
+                                    </datalist>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* CARD 3: Mensaje Personalizado */}
+                        <Card className="h-full border-2 rounded-xl">
+                            <CardHeader className="bg-muted/50 pb-4 border-b flex flex-row items-center justify-between space-y-0">
+                                <CardTitle className="text-sm font-bold tracking-tight uppercase">Mensaje Personalizado</CardTitle>
+                                <div className="flex items-center gap-2 -my-2">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={handleWhatsApp}
+                                        type="button"
+                                        className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                        title="Enviar por WhatsApp"
+                                    >
+                                        <MessageCircle className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={handleCopy}
+                                        type="button"
+                                        className="h-8 w-8"
+                                        title="Copiar mensaje"
+                                    >
+                                        <Copy className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            </CardHeader>
+                            <CardContent className="pt-4 space-y-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="desde">Desde</Label>
+                                    <Input
+                                        id="desde"
+                                        name="desde"
+                                        value={desdeNote}
+                                        onChange={(e) => setDesde(e.target.value)}
+                                        placeholder="Desde"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="folio">Folio</Label>
+                                    <Input
+                                        id="folio"
+                                        name="folio"
+                                        value={folio}
+                                        onChange={(e) => setFolio(e.target.value)}
+                                        placeholder="Folio"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="tanquear_input">Tanquear</Label>
+                                    <Input
+                                        id="tanquear_input"
+                                        name="tanquear"
+                                        value={tanquear}
+                                        onChange={(e) => setTanquear(e.target.value)}
+                                        placeholder="Tanquear"
+                                    />
+                                </div>
+                                <pre className="text-sm font-mono whitespace-pre-wrap bg-secondary/30 p-4 rounded-md border border-border/50 text-muted-foreground min-h-[180px]">
+                                    {customMessage}
+                                </pre>
+                            </CardContent>
+                        </Card>
+
+                    </div>
+
+                    {status.message && (
+                        <div className={`p-4 rounded-md text-sm font-medium ${status.type === 'error' ? 'bg-destructive/15 text-destructive border-destructive/30 border' : 'bg-green-500/15 text-green-600 border-green-500/30 border'}`}>
+                            {status.message}
+                        </div>
+                    )}
+
+                    <div className="flex justify-end pt-4 bg-background z-10 p-4 rounded-xl shadow-sm border mt-4">
+                        <Button type="submit" disabled={isSubmitting} size="lg" className="w-full sm:w-auto">
+                            {isSubmitting ? 'Procesando Asignación...' : 'Confirmar Asignación'}
+                        </Button>
+                    </div>
+                </form>
+            </div>
+        </Card>
+    )
+}
